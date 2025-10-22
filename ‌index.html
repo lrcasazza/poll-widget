@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reusable Poll Widget</title>
+  <style>
+    :root{
+      --brand:#8E001C;        /* school crimson */
+      --soft-gray:#C4C4C4;    /* secondary soft gray */
+      --text:#1f2937;         /* neutral dark */
+      --muted:#6b7280;        /* muted text */
+      --border:#e5e7eb;       /* light border */
+      --bg:#ffffff;
+      --card:#ffffff;
+      --bar-bg:#ededed;       /* default bar background */
+      --bar-fill:#bdbdbd;     /* default bar fill (gray) */
+      --bar-fill-selected:var(--brand); /* highlight after vote */
+      --focus:#11182722;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;padding:16px;background:var(--bg);color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";}
+    .wrap{max-width:720px;margin:0 auto}
+    .card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:16px;
+      box-shadow:0 8px 30px rgba(0,0,0,.05);
+      padding:16px 16px 12px;
+    }
+    h1{font-size:18px;margin:0 0 6px}
+    .desc{color:var(--muted);font-size:14px;margin:0 0 12px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+    button, select, input[type="text"], input[type="password"]{
+      font:inherit;border:1px solid var(--border);border-radius:10px;
+      padding:10px 12px;background:#fff;outline:none;
+    }
+    button.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+    button.ghost{background:#fff;color:var(--text)}
+    button.link{background:transparent;border:none;color:var(--muted);text-decoration:underline;padding:0}
+    button:disabled{opacity:0.5}
+    button:focus-visible, input:focus-visible, select:focus-visible{box-shadow:0 0 0 3px var(--focus)}
+
+    .q{font-weight:600;margin:6px 0 6px}
+    .options{display:grid;gap:10px;margin:8px 0}
+    .option{display:flex;gap:10px;align-items:center;border:1px solid var(--border);border-radius:12px;padding:10px}
+    .option input{width:18px;height:18px}
+    .opt-main{flex:1}
+    .opt-name{font-size:15px}
+    .bar{height:10px;background:var(--bar-bg);border-radius:999px;overflow:hidden;margin-top:6px}
+    .fill{height:100%;width:0%;background:var(--bar-fill);transition:width .35s ease}
+    .fill.selected{background:var(--bar-fill-selected);animation:pulse .8s ease 1}
+    @keyframes pulse{0%{transform:scaleX(.98)}50%{transform:scaleX(1.02)}100%{transform:scaleX(1)}}
+
+    .footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted);font-size:13px}
+    .pill{font-size:12px;background:#f3f4f6;color:#4b5563;padding:2px 8px;border-radius:999px}
+    .admin{margin-top:14px;border-top:1px dashed var(--border);padding-top:12px}
+    .admin-panel{display:none;border:1px solid var(--border);border-radius:12px;padding:12px;background:#fafafa}
+    .grid{display:grid;gap:8px}
+    .hint{font-size:12px;color:var(--muted);margin-top:2px}
+    .row{display:grid;gap:8px;grid-template-columns:1fr}
+    .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .right{margin-left:auto}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="region" aria-labelledby="poll-title">
+      <h1 id="poll-title">Faculty Poll</h1>
+      <p class="desc" id="poll-desc">Anonymous votes. Results are shared. Refresh to sync if needed.</p>
+
+      <div class="controls">
+        <button class="primary" id="voteBtn" disabled>Submit vote</button>
+        <button class="ghost" id="refreshBtn" title="Reload poll">Refresh</button>
+        <button class="link" id="adminBtn" aria-expanded="false">Admin</button>
+        <span class="pill" id="pollTypePill">—</span>
+        <span class="right pill" id="groupPill" title="Poll group"></span>
+      </div>
+
+      <div class="q" id="question">Loading…</div>
+      <div class="options" id="options"></div>
+
+      <div class="footer">
+        <span id="tally">—</span>
+        <span id="status">Ready</span>
+      </div>
+
+      <div class="admin">
+        <div class="admin-panel" id="adminPanel" aria-hidden="true">
+          <div class="grid">
+            <div class="row">
+              <label>Admin passcode
+                <input type="password" id="adminPass" placeholder="Required to edit/arch ive polls" autocomplete="off" />
+              </label>
+            </div>
+
+            <div class="row">
+              <label>Poll type
+                <select id="typeSelect">
+                  <option value="single">Single choice</option>
+                  <option value="multi">Multiple select</option>
+                  <option value="yesno">Yes / No</option>
+                  <option value="rating">Rating (1–5)</option>
+                </select>
+              </label>
+              <div class="hint">Yes/No and Rating auto-generate options. For single/multi, provide custom options below.</div>
+            </div>
+
+            <div class="row">
+              <label>Question
+                <input type="text" id="questionInput" placeholder="e.g., Which workshop time works best?" />
+              </label>
+            </div>
+
+            <div class="row">
+              <label>Options (comma-separated; ignored for Yes/No and Rating)
+                <input type="text" id="optionsInput" placeholder="Option A, Option B, Option C" />
+              </label>
+            </div>
+
+            <div class="inline">
+              <button class="primary" id="savePollBtn">Save as current poll</button>
+              <button id="archiveBtn" title="Copy current poll to archive">Archive current poll</button>
+              <span class="hint">Change the passcode occasionally. Keep it simple but private.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK (modular v9) -->
+  <script type="module">
+    /*************************************************
+     * Firebase initialization
+     *************************************************/
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import {
+      getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot,
+      collection, addDoc, serverTimestamp, runTransaction
+    } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+    // Your web app's Firebase configuration (provided by you)
+    const firebaseConfig = {
+      apiKey: "AIzaSyC72L0vJDeBm1o6t0DbfFTQ37bOmv0fCCY",
+      authDomain: "polling-widget-b707f.firebaseapp.com",
+      projectId: "polling-widget-b707f",
+      storageBucket: "polling-widget-b707f.firebasestorage.app",
+      messagingSenderId: "829590683557",
+      appId: "1:829590683557:web:9365cdcd2d466d99d1b24c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    /*************************************************
+     * Config: group support & UX
+     *************************************************/
+    const params   = new URLSearchParams(location.search);
+    const pollGroup = (params.get("group") || "default-group").trim().toLowerCase();
+    const currentDocId = `${pollGroup}__current`; // active poll doc id
+    const LS_KEY = `pollWidget_voted_${pollGroup}`; // local vote record
+
+    // UI elements
+    const $ = id => document.getElementById(id);
+    const questionEl = $("question");
+    const optionsEl  = $("options");
+    const tallyEl    = $("tally");
+    const statusEl   = $("status");
+    const voteBtn    = $("voteBtn");
+    const refreshBtn = $("refreshBtn");
+    const adminBtn   = $("adminBtn");
+    const adminPanel = $("adminPanel");
+    const adminPass  = $("adminPass");
+    const typeSelect = $("typeSelect");
+    const questionInput = $("questionInput");
+    const optionsInput  = $("optionsInput");
+    const savePollBtn   = $("savePollBtn");
+    const archiveBtn    = $("archiveBtn");
+    const typePill   = $("pollTypePill");
+    const groupPill  = $("groupPill");
+
+    // Show group on UI
+    groupPill.textContent = pollGroup;
+
+    // Duplicate vote deterrence (anonymous)
+    const fingerprint = (() => {
+      const ua = navigator.userAgent || "";
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      const salt = "pollwidget-1";
+      return btoa(unescape(encodeURIComponent(`${ua}|${tz}|${salt}`))).slice(0,24);
+    })();
+
+    let unsubscribe = null;
+    let currentPoll = null;
+    let selected = new Set();
+
+    /*************************************************
+     * Helpers
+     *************************************************/
+    const status = (m) => statusEl.textContent = m;
+    const getLS  = () => JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+    const setLS  = (arr) => localStorage.setItem(LS_KEY, JSON.stringify(arr));
+
+    function computeOptionsFor(poll){
+      if (!poll) return [];
+      if (poll.type === "yesno") return [{id:"yes", text:"Yes"}, {id:"no", text:"No"}];
+      if (poll.type === "rating") return [1,2,3,4,5].map(n=>({id:String(n), text:String(n)}));
+      return poll.options || [];
+    }
+
+    function percent(n, total){
+      if (!total) return 0;
+      return Math.round((n/total)*100);
+    }
+
+    function renderPoll(poll){
+      currentPoll = poll;
+      $("poll-title").textContent = "Faculty Poll";
+      questionEl.textContent = poll.question || "Untitled poll";
+      typePill.textContent = ({single:"Single choice",multi:"Multiple select",yesno:"Yes / No",rating:"Rating (1–5)"}[poll.type] || "—");
+
+      const opts = computeOptionsFor(poll);
+      const counts = poll.counts || {};
+      const total  = Object.values(counts).reduce((a,b)=>a+(b||0),0);
+
+      optionsEl.innerHTML = "";
+      const prev = getLS(); // previously chosen by this browser (soft deterrent)
+
+      opts.forEach(opt => {
+        const id = opt.id;
+        const wrap = document.createElement("label");
+        wrap.className = "option";
+
+        const inp = document.createElement("input");
+        inp.type = (poll.type === "multi") ? "checkbox" : "radio";
+        inp.name = "poll";
+        inp.value = id;
+
+        const main = document.createElement("div");
+        main.className = "opt-main";
+
+        const name = document.createElement("div");
+        name.className = "opt-name";
+        name.textContent = opt.text;
+
+        const bar = document.createElement("div");
+        bar.className = "bar";
+
+        const fill = document.createElement("div");
+        fill.className = "fill";
+        const pct = percent(counts[id]||0, total);
+        fill.style.width = pct + "%";
+        bar.appendChild(fill);
+
+        const meta = document.createElement("div");
+        meta.className = "desc";
+        meta.textContent = `${counts[id]||0} vote${(counts[id]||0)===1?"":"s"} (${pct}%)`;
+
+        main.appendChild(name);
+        main.appendChild(bar);
+        main.appendChild(meta);
+        wrap.appendChild(inp);
+        wrap.appendChild(main);
+        optionsEl.appendChild(wrap);
+
+        // selection behavior
+        inp.addEventListener("change", () => handleSelect(id, inp.checked));
+      });
+
+      // restore local selection
+      if (prev.length){
+        selected = new Set(prev);
+        [...optionsEl.querySelectorAll("input")].forEach(i => { if (selected.has(i.value)) i.checked = true; });
+        // mark selected bar
+        [...optionsEl.querySelectorAll(".fill")].forEach((f, idx) => {
+          const id = opts[idx]?.id;
+          if (id && selected.has(id)) f.classList.add("selected");
+        });
+        voteBtn.disabled = selected.size===0;
+      }else{
+        selected = new Set();
+        voteBtn.disabled = true;
+      }
+
+      tallyEl.textContent = total ? `${total} total vote${total===1?"":"s"}` : "No votes yet";
+      status("Loaded.");
+    }
+
+    function handleSelect(id, checked){
+      if (!currentPoll) return;
+      if (currentPoll.type === "multi"){
+        if (checked) selected.add(id); else selected.delete(id);
+      } else {
+        selected = new Set(checked ? [id] : []);
+        // ensure only one radio checked
+        if (checked){
+          [...optionsEl.querySelectorAll("input")].forEach(inp => { if (inp.value !== id) inp.checked = false; });
+        }
+      }
+      voteBtn.disabled = selected.size===0;
+    }
+
+    /*************************************************
+     * Firestore I/O
+     *************************************************/
+    async function ensureSeed(){
+      const ref = doc(db, "polls", currentDocId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) return;
+      const seed = {
+        question:"Which workshop time works best next week?",
+        type:"single",
+        options:[{id:"mon-3",text:"Mon 3–4pm"},{id:"tue-12",text:"Tue 12–1pm"},{id:"fri-10",text:"Fri 10–11am"}],
+        counts:{"mon-3":0,"tue-12":0,"fri-10":0},
+        adminLock:"changeme123",
+        group: pollGroup,
+        createdAt: serverTimestamp()
+      };
+      await setDoc(ref, seed);
+      console.info("[Poll] Seeded default poll. Open Admin and change the passcode.");
+    }
+
+    async function loadPoll(){
+      status("Loading…");
+      if (unsubscribe){ unsubscribe(); unsubscribe=null; }
+      await ensureSeed();
+      const ref = doc(db, "polls", currentDocId);
+      unsubscribe = onSnapshot(ref, (snap) => {
+        if (snap.exists()) renderPoll(snap.data());
+      });
+    }
+
+    async function vote(){
+      if (!currentPoll) return;
+      const choices = [...selected];
+      if (!choices.length) return;
+
+      const ref = doc(db, "polls", currentDocId);
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw new Error("Poll missing");
+        const data = snap.data();
+        const opts = new Set(computeOptionsFor(data).map(o=>o.id));
+        const valid = choices.filter(c=>opts.has(c));
+        if (!valid.length) throw new Error("Invalid selection");
+        const counts = {...(data.counts || {})};
+        valid.forEach(id => counts[id] = (counts[id]||0)+1);
+        tx.update(ref, { counts });
+      });
+
+      await addDoc(collection(db, "polls", currentDocId, "votes"), {
+        optionIds: choices,
+        ts: serverTimestamp(),
+        fp: fingerprint
+      });
+
+      // save locally (soft duplicate prevention)
+      setLS(choices);
+
+      // visual feedback: highlight selected bars with brand + pulse
+      const opts = computeOptionsFor(currentPoll);
+      [...optionsEl.querySelectorAll(".fill")].forEach((f, idx) => {
+        const id = opts[idx]?.id;
+        f.classList.toggle("selected", id && selected.has(id));
+      });
+
+      voteBtn.disabled = true;
+      status("Vote recorded. Thank you!");
+    }
+
+    async function savePoll(){
+      const pass = adminPass.value.trim();
+      if (!pass){ status("Enter the admin passcode first."); return; }
+
+      const type = typeSelect.value;
+      const q    = questionInput.value.trim();
+      if (!q){ status("Enter a question."); return; }
+
+      let options = [];
+      if (type==="single" || type==="multi"){
+        const raw = optionsInput.value.split(",").map(s=>s.trim()).filter(Boolean);
+        if (raw.length < 2){ status("Provide at least two options."); return; }
+        options = raw.map((t,i)=>({id:(t.toLowerCase().replace(/[^a-z0-9]+/g,"-")||`opt${i+1}`), text:t}));
+      }
+
+      // If doc exists, require matching pass; if not, create with provided pass
+      const ref = doc(db, "polls", currentDocId);
+      const snap = await getDoc(ref);
+      if (snap.exists() && snap.data().adminLock !== pass){
+        status("Wrong passcode."); return;
+      }
+
+      const counts = {};
+      const keys = type==="yesno" ? ["yes","no"]
+                 : type==="rating" ? ["1","2","3","4","5"]
+                 : options.map(o=>o.id);
+      keys.forEach(k => counts[k]=0);
+
+      const docData = {
+        question:q, type,
+        options: (type==="single"||type==="multi")?options:[],
+        counts, adminLock:pass, group:pollGroup,
+        createdAt: serverTimestamp()
+      };
+      await setDoc(ref, docData);
+      status("Poll updated.");
+    }
+
+    async function archiveCurrent(){
+      const pass = adminPass.value.trim();
+      if (!pass){ status("Enter the admin passcode first."); return; }
+      const ref = doc(db, "polls", currentDocId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()){ status("No current poll to archive."); return; }
+      const data = snap.data();
+      if (data.adminLock !== pass){ status("Wrong passcode."); return; }
+
+      const archiveId = `${pollGroup}__${Date.now()}`;
+      await setDoc(doc(db, "polls", archiveId), { ...data, archivedFrom: currentDocId, archivedAt: serverTimestamp() });
+      status(`Archived (id: ${archiveId}). Current poll unchanged.`);
+      console.info("[Poll] Archived:", archiveId);
+    }
+
+    /*************************************************
+     * Wire up UI
+     *************************************************/
+    voteBtn.addEventListener("click", vote);
+    refreshBtn.addEventListener("click", loadPoll);
+    $("adminBtn").addEventListener("click", () => {
+      const open = adminPanel.style.display === "block";
+      adminPanel.style.display = open ? "none" : "block";
+      adminBtn.setAttribute("aria-expanded", String(!open));
+      adminPanel.setAttribute("aria-hidden", String(open));
+    });
+    savePollBtn.addEventListener("click", savePoll);
+    archiveBtn.addEventListener("click", archiveCurrent);
+
+    // Initial load
+    loadPoll();
+  </script>
+</body>
+</html>
